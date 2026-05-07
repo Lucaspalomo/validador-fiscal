@@ -4,7 +4,8 @@ import time
 from core import *
 
 # --- CONFIGURAÇÃO INICIAL ---
-CHAVE_API = "AIzaSyB5EZ5euiuNxbLOSlQ3VCf_FhGq9SNK4_w"
+# Pega a chave de uma configuração segura, não escrita no código
+CHAVE_API = st.secrets["GEMINI_API_KEY"]
 configurar_ia(CHAVE_API)
 
 st.set_page_config(page_title="Validador Fiscal Pro", layout="wide")
