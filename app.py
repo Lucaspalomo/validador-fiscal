@@ -1,54 +1,72 @@
 import streamlit as st
 import pandas as pd
-import core  # Importa a sua lógica do core.py
 import time
+from core import *
 
-# Configuração da página (deve ser a primeira instrução Streamlit)
-st.set_page_config(page_title="Validador Fiscal", layout="wide")
+# --- CONFIGURAÇÃO INICIAL ---
+# Usei a chave que estava no seu código
+CHAVE_API = "AIzaSyB5EZ5euiuNxbLOSlQ3VCf_FhGq9SNK4_w"
+configurar_ia(CHAVE_API)
 
-# Título limpo e sem caracteres que causam erro de encoding
-st.title("📊 Auditoria Fiscal")
-st.markdown("---")
+st.set_page_config(page_title="Validador Fiscal Pro", layout="wide")
 
-# Criação das abas
-tab1, tab2, tab3 = st.tabs(["🔍 Consulta IA", "📄 Processar XML", "💾 Base de Dados"])
+# Título único e limpo para evitar erros de encoding (??)
+st.title("📊 Auditoria Fiscal (XML + Base Local)")
 
+tab1, tab2, tab3 = st.tabs(["🔍 Consulta", "📄 XML", "💾 Base"])
+
+# --- TAB 1: CONSULTA UNITÁRIA ---
 with tab1:
-    st.header("Consulta com Inteligência Artificial")
-    pergunta = st.text_input("O que deseja validar no NCM/CEST?")
-    
-    if st.button("Consultar IA"):
-        if pergunta:
-            with st.spinner("Analisando..."):
-                # Aqui chama a função de IA que criamos no core.py
-                resposta = core.consultar_ia(pergunta)
-                st.write(resposta)
-                time.sleep(1) # Delay para evitar erro de quota
+    entrada = st.text_input("Digite o EAN ou Nome do Produto:")
+    if st.button("Validar Item"):
+        base = carregar_base()
+        if entrada in base:
+            st.success("Encontrado na Base de Conhecimento Local!")
+            st.write(base[entrada])
         else:
-            st.warning("Por favor, digite uma pergunta.")
+            with st.spinner("Consultando IA..."):
+                resultado = consultar_gemini(f"Valide NCM/CEST para: {entrada}. Retorne tabela.")
+                st.markdown(resultado)
 
+# --- TAB 2: PROCESSAR XML ---
 with tab2:
-    st.header("Análise de Arquivos XML")
-    uploaded_file = st.file_uploader("Arraste seu XML de NF-e aqui", type=["xml"])
-    
-    if uploaded_file is not None:
-        xml_content = uploaded_file.read()
-        # Chama a função de limpeza que remove os links/namespaces
-        dados_xml = core.processar_xml_nfe(xml_content)
+    arquivo = st.file_uploader("Suba o XML da NF-e", type=['xml'])
+    if arquivo:
+        conteudo_xml = arquivo.read()
+        itens = processar_xml_nfe(conteudo_xml)
         
-        if dados_xml:
-            df = pd.DataFrame(dados_xml)
-            st.subheader("Itens Identificados")
-            st.table(df) # Exibe a tabela limpa
+        if itens:
+            df = pd.DataFrame(itens)
+            st.write(f"Itens encontrados: {len(df)}")
+            st.dataframe(df, use_container_width=True)
+            
+            if st.button("Auditar todos os itens da nota"):
+                for item in itens:
+                    with st.expander(f"Item {item['Item']} - {item['Descrição']}"):
+                        prompt = f"Analise o NCM {item['NCM']} para o produto {item['Descrição']}. Responda se está correto ou sugira o certo."
+                        resposta = consultar_gemini(prompt)
+                        st.write(resposta)
+                        time.sleep(4) # Delay para evitar o erro de limite (429)
         else:
-            st.error("Não foi possível extrair dados deste XML.")
+            st.error("Não foi possível extrair itens deste XML. Verifique o formato.")
 
+# --- TAB 3: BASE DE DADOS ---
 with tab3:
-    st.header("Base de Conhecimento Local")
-    # Exemplo de visualização da base local
-    if st.button("Verificar Base"):
-        base = core.carregar_base_local()
-        st.json(base)
+    st.subheader("Gerenciar Conhecimento")
+    with st.expander("Adicionar/Corrigir Dados Manuais"):
+        c1, c2, c3 = st.columns(3)
+        ean_input = c1.text_input("EAN")
+        ncm_input = c2.text_input("NCM Correto")
+        cest_input = c3.text_input("CEST Correto")
+        if st.button("Salvar Correção"):
+            if ean_input:
+                salvar_na_base(ean_input, {"ncm": ncm_input, "cest": cest_input})
+                st.success(f"Item {ean_input} salvo com sucesso!")
+            else:
+                st.warning("Informe ao menos o EAN para salvar.")
 
-# Rodapé simples
-st.sidebar.info("Versão 1.0 - Suporte Automações")
+    base_atual = carregar_base()
+    if base_atual:
+        st.write("Registros salvos na sua base local:")
+        df_base = pd.DataFrame.from_dict(base_atual, orient='index')
+        st.table(df_base)
